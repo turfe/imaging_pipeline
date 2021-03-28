@@ -2,90 +2,75 @@ import cv2 as cv
 import numpy as np
 import rawpy
 import imageio
+import matplotlib.pyplot as plot
+
+def white_balance(image_array, matrix_wb):
+    white_balance = np.zeros((2, 2), dtype=np.double)
+    white_balance[0][0] = matrix_wb[0] / matrix_wb[1]
+    white_balance[0][1] = white_balance[1][0] = matrix_wb[1] / matrix_wb[1]
+    white_balance[1][1] = matrix_wb[2] / matrix_wb[1]
+    white_balance = np.tile(white_balance, (image_array.shape[0] // 2, image_array.shape[1] // 2))
+    image_result = np.clip(image_array * white_balance, 0, 1)
+    return image_result
 
 
-def func_wb(channel, percent):
-    mi, ma = (np.percentile(channel, percent), np.percentile(channel, 100.0 - percent))
-    channel = np.uint8(np.clip((channel - mi) * 255.0 / (ma - mi), 0, 255))
-    return channel
+def demosaic_downsampling(image_array):
+    image_result = np.empty((image_array.shape[0] // 2, image_array.shape[1] // 2, 3), dtype=np.double)
+    image_result[:, :, 0] = image_array[0::2, 0::2]
+    image_result[:, :, 1] = (image_array[0::2, 1::2] + image_array[1::2, 0::2]) / 2
+    image_result[:, :, 2] = image_array[1::2, 1::2]
+    return image_result
 
 
-def white_balancing_cv(image):
-    balancer = cv.xphoto.createSimpleWB()
-    # balancer.setSaturationThreshold(0.05)
-    image_wb = balancer.balanceWhite(image)
-    # cv.imshow('image after wb_cv', image_wb)
-    return image_wb
+def transfrom_to_sRGB(image_array, matrix_to_sRGB):
+    image_result = np.empty((image_array.shape[0], image_array.shape[1], image_array.shape[2]), dtype=np.double)
+    image_result[:, :, 0] = image_array[:, :, 0] * matrix_to_sRGB[0][0] + image_array[:, :, 1] * matrix_to_sRGB[0][1] + \
+                            image_array[:, :, 2] * matrix_to_sRGB[0][2]
+    image_result[:, :, 1] = image_array[:, :, 0] * matrix_to_sRGB[1][0] + image_array[:, :, 1] * matrix_to_sRGB[1][1] + \
+                            image_array[:, :, 2] * matrix_to_sRGB[1][2]
+    image_result[:, :, 2] = image_array[:, :, 0] * matrix_to_sRGB[2][0] + image_array[:, :, 1] * matrix_to_sRGB[2][1] + \
+                            image_array[:, :, 2] * matrix_to_sRGB[2][2]
+    return image_result
 
 
-def white_balancing_gimp(image):
-    image_wb = np.dstack([func_wb(channel, 0.05) for channel in cv.split(image)])
-    cv.imshow('image after wb_gimp', image_wb)
-    return image_wb
-
-
-def white_balancing_manual(image, wb_matrix):
-    for i in range(image.shape[0]):
-        for j in range(image.shape[1]):
-            for k in range(image.shape[2]):
-                image[i][j][k] *= wb_matrix[k]/wb_matrix[1]
-
-
-def demosaic_downgrade_4x(image_array):
-    R = image_array[0::2, 0::2]
-    G = np.clip(image_array[0::2, 1::2] // 2 + image_array[1::2, 0::2] // 2, 0, 2 ** 16 - 1)
-    B = image_array[1::2, 1::2]
-    downgrade_result = np.dstack((R, G, B))
-    return downgrade_result
-
-
-path = 'example.cr2'
+path = 'example.CR2'
 with rawpy.imread(path) as raw:
-    print(f'raw type:                     {raw.raw_type}')
+    postprocess_rawpy = raw.postprocess()
     print(f'number of colors:             {raw.num_colors}')
     print(f'color description:            {raw.color_desc}')
-    print(f'raw pattern:                  {raw.raw_pattern.tolist()}')
     print(f'white level:                  {raw.white_level}')
-    print(f'color matrix:                 {raw.color_matrix.tolist()}')
-    print(f'XYZ to RGB conversion matrix: {raw.rgb_xyz_matrix.tolist()}')
+    print('XYZ to RGB conversion matrix:')
+    print(raw.rgb_xyz_matrix)
     print(f'camera white balance:         {raw.camera_whitebalance}')
-    print(f'daylight white balance:       {raw.daylight_whitebalance}')
-    print(f'tone-curve:       {raw.tone_curve}')
-    raw_ar = raw.raw_image_visible
-    # rgb = raw.postprocess()
-    int14_max = 2 ** 14 - 1
-    black_level = np.amin(raw_ar)
-    raw_ar -= black_level
-    raw_ar *= int(int14_max / (raw.white_level - black_level))
-    raw_ar = np.clip(raw_ar, 0, int14_max)
 
-    raw_ar *= 2 ** 2
-    image_demosaic = demosaic_downgrade_4x(raw_ar)
-    print(image_demosaic.shape)
+    raw_image = raw.raw_image_visible
+    black_level = np.min(raw_image)
+    raw_image -= black_level
+    raw_image = raw_image / (raw.white_level - black_level)
 
-    camera_wb_red = raw.camera_whitebalance[0] / raw.camera_whitebalance[1]
-    camera_wb_blue = raw.camera_whitebalance[2] / raw.camera_whitebalance[1]
-    # print(camera_wb_red, camera_wb_blue)
-    # print(camera_wb_red1, camera_wb_blue1)
-    image_demosaic[:, :, 0] = image_demosaic[:, :, 0] * camera_wb_red
-    image_demosaic[:, :, 2] = image_demosaic[:, :, 2] * camera_wb_blue
-    image_demosaic = np.clip(image_demosaic, 0, int14_max)
-    # white_balancing_manual(image_demosaic, raw.daylight_whitebalance)
-    # print(image_demosaic)
+    device_wb = raw.camera_whitebalance
+    image_wb = white_balance(raw_image, device_wb)
 
-    matrix_sRGB = raw.rgb_xyz_matrix[0:3, 0:3]
-    matrix_sRGB = np.round(matrix_sRGB * 255)
-    image_demosaic = image_demosaic // 2 ** 8
-    shape = image_demosaic.shape
-    # print(shape)
-    pixel_image = image_demosaic.reshape((-1, 3)).T
-    pixel_image = np.dot(matrix_sRGB, pixel_image) // 255
-    image = pixel_image.T.reshape(shape)
-    image = np.clip(image, 0, 255).astype(np.uint8)
+    image_demosaic = demosaic_downsampling(image_wb)
 
-    gamma_curve = [(i / 255) ** (1 / 2.2) * 255 for i in range(256)]
-    gamma_curve = np.array(gamma_curve, dtype=np.uint8)
-    image_final = gamma_curve[image]
+    matrix_XYZ_to_device = np.array(raw.rgb_xyz_matrix[0:3, 0:3], dtype=np.double)
+    matrix_sRGB_to_XYZ = np.array([[0.4124564, 0.3575761, 0.1804375],
+                                   [0.2126729, 0.7151522, 0.0721750],
+                                   [0.0193339, 0.1191920, 0.9503041]], dtype=np.double)
+    matrix_sRGB_to_device = np.dot(matrix_XYZ_to_device, matrix_sRGB_to_XYZ)
+    normalization = np.tile(np.sum(matrix_sRGB_to_device, 1), (3, 1)).transpose()
+    matrix_sRGB_to_device = matrix_sRGB_to_device / normalization
+    matrix_device_to_sRGB = np.linalg.inv(matrix_sRGB_to_device)
+
+    image_sRGB = transfrom_to_sRGB(image_demosaic, matrix_device_to_sRGB)
+
+    image_sRGB = np.clip(image_sRGB, 0, 1)
+    image_sRGB = image_sRGB ** (1 / 2.2)
+    image_final = np.clip(image_sRGB, 0, 1)
+
+    plot.axis('off')
+    plot.imshow(image_final)
+    plot.show()
 
 imageio.imsave('final_srgb.png', image_final)
-# imageio.imsave('normal.png', rgb)
+imageio.imsave('postprocess_rawpy.png', postprocess_rawpy)
