@@ -80,11 +80,11 @@ def demosaic(image_array):
     for i in range(1, image_result.shape[0] - 1):
         for j in range(1, image_result.shape[1] - 1):
             if map_filter[i][j] == 0:
-                image_result[i][j][1] = edge_interpolation(image_array, image_result, i, j, 1, 1)
-                image_result[i][j][2] = edge_interpolation(image_array, image_result, i, j, 1, 2)
+                image_result[i][j][1] = edge_interpolation(image_array, image_result, i, j, 0.5, 1)
+                image_result[i][j][2] = edge_interpolation(image_array, image_result, i, j, 0.5, 2)
             elif map_filter[i][j] == 2:
-                image_result[i][j][1] = edge_interpolation(image_array, image_result, i, j, 1, 1)
-                image_result[i][j][0] = edge_interpolation(image_array, image_result, i, j, 1, 0)
+                image_result[i][j][1] = edge_interpolation(image_array, image_result, i, j, 0.5, 1)
+                image_result[i][j][0] = edge_interpolation(image_array, image_result, i, j, 0.5, 0)
             else:
                 if map_filter[i - 1][j] == 2:
                     image_result[i][j][0] = (image_array[i][j - 1] + image_array[i][j + 1]) / 2
@@ -113,6 +113,7 @@ with open(path, 'rb') as raw_file:
     tags = exifread.process_file(raw_file)
     f_number = convert_to_float(str(dict(tags.items()).get('EXIF FNumber')))
     exp_time = convert_to_float(str(dict(tags.items()).get('EXIF ExposureTime')))
+    print(dict(tags.items()).get('EXIF ISOSpeedRatings'))
     print(f'f-number:                     {f_number}')
     print(f'exposure time:                {exp_time}')
     exp_value = math.log((math.pow(f_number, 2) / exp_time), 2)
@@ -132,6 +133,7 @@ with rawpy.imread(path) as raw:
     black_level = np.min(raw_image)
     raw_image -= black_level
     raw_image = raw_image / (raw.white_level - black_level)
+    raw_image = raw_image * (2**(exp_value/10))
 
     device_wb = raw.camera_whitebalance
     image_wb = white_balance(raw_image, device_wb)
