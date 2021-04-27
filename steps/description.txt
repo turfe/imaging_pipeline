@@ -1,0 +1,2 @@
+Hi!
+It's directory for demonstration of the work of each step in my basic image processing pipeline.

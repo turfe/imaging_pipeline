@@ -22,35 +22,38 @@ def device_wb(image_array, matrix_wb):
 
 
 def device_wb_demosaic(image_array, matrix_wb):
-    image_array[:, :, 0] *= (matrix_wb[0] / matrix_wb[1])
-    image_array[:, :, 2] *= (matrix_wb[2] / matrix_wb[1])
-    return image_array
+    image_output = np.copy(image_array)
+    image_output[:, :, 0] *= (matrix_wb[0] / matrix_wb[1])
+    image_output[:, :, 2] *= (matrix_wb[2] / matrix_wb[1])
+    return image_output
 
 
 def device_wb_daylight(image_array, matrix_daylight):
-    image_array[:, :, 0] *= matrix_daylight[0]
-    image_array[:, :, 1] *= matrix_daylight[1]
-    image_array[:, :, 2] *= matrix_daylight[2]
-    return image_array
+    image_output = np.copy(image_array)
+    image_output[:, :, 0] *= matrix_daylight[0]
+    image_output[:, :, 1] *= matrix_daylight[1]
+    image_output[:, :, 2] *= matrix_daylight[2]
+    return image_output
 
 
 def awb_gray_world(image_array):
+    image_output = np.copy(image_array)
     R_mean = np.average(image_array[:, :, 0])
     G_mean = np.average(image_array[:, :, 1])
     B_mean = np.average(image_array[:, :, 2])
-    image_array[:, :, 0] *= (G_mean / R_mean)
-    image_array[:, :, 2] *= (G_mean / B_mean)
-    return image_array
+    image_output[:, :, 0] *= (G_mean / R_mean)
+    image_output[:, :, 2] *= (G_mean / B_mean)
+    return image_output
 
 
 def awb_white_patch(image_array):
+    image_output = np.copy(image_array)
     R_max = np.amax(image_array[:, :, 0])
     G_max = np.amax(image_array[:, :, 1])
     B_max = np.amax(image_array[:, :, 2])
-    print(R_max, G_max, B_max)
-    image_array[:, :, 0] *= (G_max / R_max)
-    image_array[:, :, 2] *= (G_max / B_max)
-    return image_array
+    image_output[:, :, 0] *= (G_max / R_max)
+    image_output[:, :, 2] *= (G_max / B_max)
+    return image_output
 
 
 def convert_to_float(frac_str):
@@ -143,14 +146,7 @@ def transform_to(image_array, transform_matrix):
     return image_result
 
 
-fig_raw, axs_raw = plot.subplots()
-fig_black_subtraction, axs_black_subtraction = plot.subplots()
-fig_debayering, axs_debayering = plot.subplots()
-fig_noise_reduction, axs_noise_reduction = plot.subplots()
-fig_white_balance, axs_white_balance = plot.subplots()
-fig_exposure, axs_exposure = plot.subplots()
-fig_final, axs_final = plot.subplots()
-path = 'example.CR2'
+path = '00_0004.CR2'
 
 with open(path, 'rb') as raw_file:
     tags = exifread.process_file(raw_file)
@@ -176,24 +172,21 @@ with rawpy.imread(path) as raw:
 
     raw_image = raw.raw_image_visible
 
-    axs_raw.imshow(raw_image)
-    axs_raw.set_title("RAW image")
-    axs_raw.axis('off')
+    # initial_step = Image.fromarray((raw_image * 255).astype(np.uint8))
+    # initial_step.save('steps/1_reading_raw.png')
 
     black_level = np.min(raw.black_level_per_channel)
     raw_image -= black_level
     image_black_subtraction = raw_image / (raw.white_level - black_level)
 
-    axs_black_subtraction.imshow(image_black_subtraction)
-    axs_black_subtraction.set_title("black level subtraction")
-    axs_black_subtraction.axis('off')
+    black_subtraction_step = Image.fromarray((image_black_subtraction * 255).astype(np.uint8))
+    black_subtraction_step.save('steps/02_black_subtraction.png')
 
     image_debayering = debayering(image_black_subtraction)
     # image_debayering = debayering_downsampling(image_black_subtraction)
 
-    axs_debayering.imshow(image_debayering)
-    axs_debayering.set_title("debayering")
-    axs_debayering.axis('off')
+    debayering_step = Image.fromarray((image_debayering * 255).astype(np.uint8))
+    debayering_step.save('steps/03_debayering.png')
 
     image_debayer = Image.fromarray((image_debayering * 255).astype(np.uint8))
     pil_image_blur = image_debayer.filter(ImageFilter.GaussianBlur(radius=1))
@@ -202,24 +195,28 @@ with rawpy.imread(path) as raw:
     image_noise_reduction = np.where(abs(image_diff) > 0.01, image_debayering, image_blur)
     image_noise_reduction = np.clip(image_noise_reduction, 0, 1)
 
-    axs_noise_reduction.imshow(image_noise_reduction)
-    axs_noise_reduction.set_title("noise reduction")
-    axs_noise_reduction.axis('off')
+    noise_reduction_step = Image.fromarray((image_noise_reduction * 255).astype(np.uint8))
+    noise_reduction_step.save('steps/04_noise_reduction.png')
 
     image_white_balance = device_wb_demosaic(image_noise_reduction, raw.camera_whitebalance)
     # image_white_balance = device_wb_daylight(image_noise_reduction, raw.daylight_whitebalance)
-    # image_white_balance = awb_gray_world(image_noise_reduction)
-    # image_white_balance = awb_white_patch(image_noise_reduction)
+    # image_white_balance_gw = awb_gray_world(image_noise_reduction)
+    # image_white_balance_wp = awb_white_patch(image_noise_reduction)
+    image_white_balance = np.clip(image_white_balance, 0, 1)
 
-    axs_white_balance.imshow(image_white_balance)
-    axs_white_balance.set_title("white balance")
-    axs_white_balance.axis('off')
+    white_balance_step = Image.fromarray((image_white_balance * 255).astype(np.uint8))
+    white_balance_step.save('steps/05_white_balance.png')
+
+    # gray_world_step = Image.fromarray((image_white_balance_gw * 255).astype(np.uint8))
+    # gray_world_step.save('steps/5_gray_world.png')
+    # white_patch_step = Image.fromarray((image_white_balance_wp * 255).astype(np.uint8))
+    # white_patch_step.save('steps/5_white_patch.png')
 
     image_exposure = image_white_balance * (2 ** (exp_value / 10))
+    image_exposure = np.clip(image_exposure, 0, 1)
 
-    axs_exposure.imshow(image_exposure)
-    axs_exposure.set_title("exposure compensation")
-    axs_exposure.axis('off')
+    exposure_compensation_step = Image.fromarray((image_exposure * 255).astype(np.uint8))
+    exposure_compensation_step.save('steps/06_exposure_compensation.png')
 
     matrix_XYZ_to_device = np.array(raw.rgb_xyz_matrix[0:3, 0:3], dtype=np.double)
     matrix_sRGB_to_device = np.dot(matrix_XYZ_to_device, matrix_sRGB_to_XYZ)
@@ -229,22 +226,13 @@ with rawpy.imread(path) as raw:
     image_sRGB = transform_to(image_exposure, matrix_device_to_sRGB)
     image_sRGB = np.clip(image_sRGB, 0, 1)
 
+    before_gamma_step = Image.fromarray((image_sRGB * 255).astype(np.uint8))
+    before_gamma_step.save('steps/07_before_gamma_correction.png')
+
     image_sRGB **= 1 / 2.2
     image_final = np.clip(image_sRGB, 0, 1)
 
-    axs_final.imshow(image_final)
-    axs_final.set_title("final image")
-    axs_final.axis('off')
+    final_step = Image.fromarray((image_final * 255).astype(np.uint8))
+    final_step.save('steps/08_final_image.png')
 
-    plot.show()
-
-fig_raw.savefig('steps/1_raw.png')
-fig_black_subtraction.savefig('steps/2_black_subtraction.png')
-fig_debayering.savefig('steps/3_debayering.png')
-fig_noise_reduction.savefig('steps/4_noise_reduction.png')
-fig_white_balance.savefig('steps/5_white_balance.png')
-fig_exposure.savefig('steps/6_exposure.png')
-fig_final.savefig('steps/7_final.png')
-
-imageio.imsave('final_srgb.png', image_final)
 imageio.imsave('postprocess_rawpy.png', postprocess_rawpy)
