@@ -1,10 +1,14 @@
 import numpy as np
 import rawpy
 import imageio
-import matplotlib.pyplot as plot
 import exifread
 import math
 from PIL import Image, ImageFilter
+import colour
+
+from colour_demosaicing import (
+    demosaicing_CFA_Bayer_bilinear
+)
 
 matrix_sRGB_to_XYZ = np.array([[0.4124564, 0.3575761, 0.1804375],
                                [0.2126729, 0.7151522, 0.0721750],
@@ -182,8 +186,9 @@ with rawpy.imread(path) as raw:
     black_subtraction_step = Image.fromarray((image_black_subtraction * 255).astype(np.uint8))
     black_subtraction_step.save('steps/02_black_subtraction.png')
 
-    image_debayering = debayering(image_black_subtraction)
+    # image_debayering = debayering(image_black_subtraction)
     # image_debayering = debayering_downsampling(image_black_subtraction)
+    image_debayering = demosaicing_CFA_Bayer_bilinear(image_black_subtraction, pattern='GBRG')
 
     debayering_step = Image.fromarray((image_debayering * 255).astype(np.uint8))
     debayering_step.save('steps/03_debayering.png')
